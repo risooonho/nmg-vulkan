@@ -444,6 +444,54 @@ impl<'a> JointBuilder<'a> {
     }
 }
 
+#[cfg(debug_assertions)]
+struct InstanceIterationDebug {
+    plane: f32,
+    shape: f32,
+}
+
+#[cfg(debug_assertions)]
+struct InstanceFrameDebug {
+    pos_delta: f32,
+    orient_coherence: f32,
+    internal_vel: f32,
+    err: Vec<InstanceIterationDebug>,
+    age: usize,
+}
+
+#[cfg(debug_assertions)]
+impl InstanceFrameDebug {
+    fn new() -> InstanceFrameDebug {
+        InstanceFrameDebug {
+            pos_delta: 0.0,
+            orient_coherence: 0.0,
+            internal_vel: 0.0,
+            err: Vec::with_capacity(16),
+            age: 0,
+        }
+    }
+
+    fn log_frame(&self) {
+        println!(
+            "         pos-delta : {:.2} m\n  \
+               orient-coherence : {:.3}\n      \
+                   internal-vel : {:.2} m/s",
+            self.pos_delta,
+            self.orient_coherence,
+            self.internal_vel,
+        );
+
+        for (i, e) in self.err.iter().enumerate() {
+            println!(
+                "   plane-err [{:03}] : {:.2} m\n   \
+                    shape-err [{:03}] : {:.2} m",
+                i, e.plane,
+                i, e.shape,
+            );
+        }
+    }
+}
+
 /* TODO: Refactor Instance data structure for memory performance
  * now that you have converged on how/where it is actually used.
  */
@@ -476,6 +524,8 @@ pub struct Instance {
     // Lower values produce springier meshes
     // A value of zero nullifies all rods in the instance
     pub rigidity: f32,
+
+    #[cfg(debug_assertions)] debug: InstanceFrameDebug,
 }
 
 /// Source mesh reference structure.
@@ -576,6 +626,7 @@ impl Instance {
             start_indices: start_indices.to_vec(),
             end_indices: end_indices.to_vec(),
             rigidity,
+            #[cfg(debug_assertions)] debug: InstanceFrameDebug::new(),
         }
     }
 
@@ -715,6 +766,7 @@ impl Instance {
                 duplicates,
             },
             rigidity,
+            #[cfg(debug_assertions)] debug: InstanceFrameDebug::new(),
         }
     }
 
@@ -1655,6 +1707,10 @@ impl Manager {
                 particle.last = particle.position;
                 particle.position = next_position;
             }
+
+            #[cfg(debug_assertions)] {
+                instance.debug.err.clear();
+            }
         }
 
         // Solve abstracted constraints first
@@ -1675,6 +1731,18 @@ impl Manager {
                     None => continue,
                 };
 
+                #[cfg(debug_assertions)]
+                instance.debug.err.push(
+                    InstanceIterationDebug {
+                        plane: 0.0,
+                        shape: 0.0,
+                    }
+                );
+
+                let dbg_idx = if cfg!(debug_assertions) {
+                    instance.debug.err.len() - 1
+                } else { 0 };
+
                 // Plane collision
                 for plane in &self.planes {
                     for particle in &mut instance.particles {
@@ -1686,6 +1754,15 @@ impl Manager {
 
                         particle.position = particle.position
                             - plane.normal * self.bounce * distance;
+
+                        #[cfg(debug_assertions)] {
+                            instance.debug.err[dbg_idx].plane -= distance;
+                        }
+                    }
+
+                    #[cfg(debug_assertions)] {
+                        instance.debug.err[dbg_idx].plane /=
+                            instance.particles.len() as f32;
                     }
                 }
 
@@ -1717,9 +1794,20 @@ impl Manager {
                             + center;
 
                         let offset = target - particle.position;
-
                         particle.position = particle.position
                             + offset * instance.rigidity;
+
+                        #[cfg(debug_assertions)] {
+                            instance.debug.err[dbg_idx].shape
+                                += offset.mag().powf(2.0);
+                        }
+                    }
+
+                    #[cfg(debug_assertions)] {
+                        let len = instance.particles.len() as f32;
+                        instance.debug.err[dbg_idx].shape = (
+                            instance.debug.err[dbg_idx].shape / len
+                        ).sqrt();
                     }
                 }
 
@@ -1747,6 +1835,19 @@ impl Manager {
             let center = instance.center();
             let orientation = instance.matched_orientation(center).to_quat();
 
+            #[cfg(debug_assertions)] {
+                let diff = (
+                      orientation.conjugate()
+                    * instance.frame_orientation_conjugate.conjugate()
+                ).norm();
+                instance.debug.orient_coherence = diff.w.abs();
+                assert!(instance.debug.orient_coherence >= 0.0);
+
+                instance.debug.pos_delta = if instance.debug.age > 0 {
+                    (center - instance.frame_position).mag()
+                } else { 0.0 };
+            }
+
             // Update instance position and orientation
             instance.frame_position = center;
             instance.frame_orientation_conjugate = orientation.conjugate();
@@ -1755,9 +1856,23 @@ impl Manager {
             debug_validate_entity!(transforms, self.handles[i].unwrap());
             transforms.set_raw(i, center, orientation, alg::Vec3::one());
 
+            #[cfg(debug_assertions)] {
+                instance.debug.internal_vel = 0.0;
+            }
+
             for particle in &mut instance.particles {
                 // Meters per FIXED_DT
                 particle.displacement = particle.position - particle.last;
+
+                #[cfg(debug_assertions)] {
+                    instance.debug.internal_vel += particle.displacement.mag()
+                        / FIXED_DT;
+                }
+            }
+
+            #[cfg(debug_assertions)] {
+                instance.debug.internal_vel /= instance.particles.len() as f32;
+                instance.debug.age += 1;
             }
 
             let new_vel = instance.compute_velocity();
