@@ -2211,6 +2211,62 @@ impl Manager {
         alg::Quat::simple(alg::Vec3::fwd(), midpoint)
     }
 
+    #[cfg(debug_assertions)]
+    pub fn dump_config(&self) {
+        let mut str = String::new();
+        str += &format!("\n # # # nmg/softbody/config # # # \n\n");
+
+        str += &format!(
+            "iter={}\n\
+             grav={}\n\
+             drag={}\n\
+             frct={}\n\
+             bnce={}\n",
+            self.iterations,
+            self.gravity,
+            self.drag,
+            self.friction,
+            self.bounce,
+        );
+
+        for (i, inst) in self.instances.iter()
+            .filter_map(|i| i.as_ref())
+            .enumerate()
+        {
+            str += &format!("\n\t-- instance {} --\n", i);
+            str += &format!(
+                " mass={}\n\
+                 rigid={}\n\
+                 match={}\n\
+                 force={}\n",
+                inst.mass,
+                inst.rigidity,
+                if inst.match_shape { 1 } else { 0 },
+                inst.force,
+            );
+
+            str += &format!("\n\t-- particles={} --\n", inst.particles.len());
+            for (j, p) in inst.particles.iter().enumerate() {
+                str += &format!("\t{}\n", j);
+                str += &format!(
+                    "curr={}\n\
+                     prev={}\n\
+                     disp={}\n",
+                    p.position,
+                    p.last,
+                    p.displacement,
+                );
+            }
+
+            /* TODO: rods, joint data */
+        }
+
+        /* TODO: joints, planes */
+
+        str += &format!("\n # # # nmg/softbody/config # # # \n\n");
+        eprint!("{}", str);
+    }
+
     #[allow(unused_variables)]
     pub fn draw_all(&self, debug: &mut debug::Handler) {
         #[cfg(debug_assertions)] {
@@ -2811,8 +2867,8 @@ mod tests {
             ctx.softbodies.iterations = 1;
             ctx.softbodies.set_gravity(Vec3::zero());
             ctx.softbodies.set_drag(0.1); // Speed up burndown
+            #[cfg(debug_assertions)] { ctx.softbodies.dump_config(); }
             ctx.burndown(8.0);
-
             println!("\n= = =\n");
         }
     }
