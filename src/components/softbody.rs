@@ -2848,6 +2848,26 @@ mod tests {
     }
 
     #[test]
+    fn shape_null() {
+        for i in 0..256 {
+            let (mut ctx, e) = Context::single();
+            let scale = i as f32 * std::f32::EPSILON;
+            {
+                let instance = ctx.softbodies.get_mut_instance(e);
+                instance.particles.iter_mut()
+                    .for_each(|p| p.init(p.position * scale, Vec3::zero()));
+                instance.rigidity = 1.0;
+            }
+
+            println!("scale={}", scale);
+            ctx.softbodies.iterations = 1;
+            ctx.softbodies.set_gravity(Vec3::zero());
+            ctx.softbodies.set_drag(0.1);
+            ctx.burndown(1.0);
+        }
+    }
+
+    #[test]
     fn shape_rand() {
         for i in 0..128 {
             let (mut ctx, e) = Context::single();
