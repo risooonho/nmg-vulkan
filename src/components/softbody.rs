@@ -2766,4 +2766,86 @@ mod tests {
         let pos = ctx.transforms.get_position(e);
         assert_approx_eq_vec3!(pos, Vec3::zero(), 1.0);
     }
+
+    #[test]
+    fn shape_inv() {
+        let (mut ctx, e) = Context::single();
+        ctx.init_instance(
+            e, |mut pos| { pos.y *= -1.0; (pos, Vec3::zero()) }
+        );
+
+        {
+            let inst = ctx.softbodies.get_mut_instance(e);
+            inst.rigidity = 1.0;
+            let orient = inst.matched_orientation(inst.center());
+            assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
+        }
+
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::zero());
+        ctx.softbodies.set_drag(0.0);
+        ctx.burndown(2.0);
+
+        let inst = ctx.softbodies.get_instance(e);
+        let orient = inst.matched_orientation(inst.center());
+        assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
+    }
+
+    #[test]
+    fn shape_rand() {
+        for i in 0..128 {
+            let (mut ctx, e) = Context::single();
+            ctx.init_instance(
+                e, |pos| {
+                    let off = Vec3::new(rands(), rands(), rands());
+                    (pos + off, Vec3::zero())
+                }
+            );
+
+            {
+                let instance = ctx.softbodies.get_mut_instance(e);
+                instance.rigidity = 1.0;
+            }
+
+            println!("config={}", i + 1);
+            ctx.softbodies.iterations = 1;
+            ctx.softbodies.set_gravity(Vec3::zero());
+            ctx.softbodies.set_drag(0.1); // Speed up burndown
+            ctx.burndown(8.0);
+
+            println!("\n= = =\n");
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn shape_err() {
+        for i in 0..32 {
+            let (mut ctx, e) = Context::single();
+            ctx.init_instance(
+                e, |pos| {
+                    let off = Vec3::new(rands(), rands(), rands());
+                    (pos + off, Vec3::zero())
+                }
+            );
+
+            {
+                let instance = ctx.softbodies.get_mut_instance(e);
+                instance.rigidity = 1.0;
+            }
+
+            println!("config={}", i + 1);
+            ctx.softbodies.iterations = 2; // Add runnoff iteration
+            ctx.softbodies.set_gravity(Vec3::zero());
+            ctx.softbodies.set_drag(0.0);
+            ctx.cycle();
+
+            {
+                let instance = ctx.softbodies.get_instance(e);
+                assert_approx_eq!(instance.debug.err[1].shape, 0.0, 4.0);
+            }
+
+            println!("\n= = =\n");
+        }
+    }
 }
