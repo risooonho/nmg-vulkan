@@ -2670,4 +2670,100 @@ mod tests {
         let rand::Closed01(result) = rand::random::<rand::Closed01<f32>>();
         result * 2f32 - 1f32
     }
+
+    #[test]
+    fn energy() {
+        let (mut ctx, e) = Context::single();
+        ctx.init_instance(e, |pos| (pos, Vec3::up()));
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::zero());
+        ctx.softbodies.set_drag(0.0);
+        ctx.cycle();
+        assert_approx_eq!(ctx.softbodies.energy(), 0.5, 2.0);
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    fn coherence() {
+        let (mut ctx, e) = Context::single();
+        ctx.init_instance(e, |pos| (pos, Vec3::zero()));
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::zero());
+        ctx.softbodies.set_drag(0.0);
+
+        {
+            let inst = ctx.softbodies.get_instance(e);
+            assert_eq!(inst.debug.orient_coherence, 0.0);
+        } ctx.cycle(); {
+            let inst = ctx.softbodies.get_instance(e);
+            assert_approx_eq!(inst.debug.orient_coherence, 1.0, 1.0);
+        }
+
+        use std::f32::consts::PI;
+        let mut diff_test = |mul: f32, eq: f32| {
+            let (center, prev) = {
+                let inst = ctx.softbodies.get_mut_instance(e);
+                let center = inst.center();
+                let prev = inst.matched_orientation(center);
+
+                let rot = Quat::axis_angle(Vec3::up(), PI * mul);
+                inst.rotate_around(rot, center);
+                (center, prev)
+            };
+
+            ctx.cycle();
+            let inst = ctx.softbodies.get_instance(e);
+            assert_approx_eq_vec3!(center, inst.center(), 1.0);
+            let curr = inst.matched_orientation(center);
+            let diff = prev.transpose() * curr;
+
+            println!(
+                "prev = {:.2}\ncurr = {:.2}\ndiff = {:.2}",
+                prev,
+                curr,
+                diff,
+            );
+
+            assert_approx_eq!(inst.debug.orient_coherence, eq, 1.0);
+        };
+
+        diff_test( 1.0, 0.0);
+        diff_test( 2.0, 1.0);
+        diff_test(-3.0, 0.0);
+        diff_test(-4.0, 1.0);
+    }
+
+    #[test]
+    fn baseline() {
+        let (mut ctx, e) = Context::single();
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::zero());
+        ctx.softbodies.set_drag(0.0);
+        ctx.burndown(4.0);
+        let pos = ctx.transforms.get_position(e);
+        assert_approx_eq_vec3!(pos, Vec3::zero(), 1.0);
+    }
+
+    #[test]
+    fn drag_none() {
+        let (mut ctx, e) = Context::single();
+        ctx.init_instance(e, |pos| (pos, Vec3::up()));
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::zero());
+        ctx.softbodies.set_drag(0.0);
+        ctx.spin(1.0);
+        let pos = ctx.transforms.get_position(e);
+        assert_approx_eq_vec3!(pos, Vec3::up(), 2.0);
+    }
+
+    #[test]
+    fn drag_full() {
+        let (mut ctx, e) = Context::single();
+        ctx.softbodies.iterations = 1;
+        ctx.softbodies.set_gravity(Vec3::up() * 128.0);
+        ctx.softbodies.set_drag(1.0);
+        ctx.burndown(2.0);
+        let pos = ctx.transforms.get_position(e);
+        assert_approx_eq_vec3!(pos, Vec3::zero(), 1.0);
+    }
 }
