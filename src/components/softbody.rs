@@ -2509,3 +2509,165 @@ impl Manager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate rand;
+    use components::*;
+    use alg::*;
+
+    use ::FIXED_DT;
+    const MIN_KE: f32 = std::f32::EPSILON * 2.0;
+    const COHERENCE_FUZZ: f32 = 0.2; // Somewhere around four rot/s
+
+    struct Empty { }
+    impl softbody::Iterate for Empty { }
+
+    struct Context {
+        entities: entity::Manager,
+        transforms: transform::Manager,
+        softbodies: softbody::Manager,
+        empty: Empty,
+    }
+
+    impl Context {
+        fn new() -> Context {
+            Context {
+                entities: entity::Manager::new(1),
+                transforms: transform::Manager::new(1),
+                softbodies: softbody::Manager::new(1, 1, 1),
+                empty: Empty { },
+            }
+        }
+
+        fn single() -> (Context, entity::Handle) {
+            let mut ctx = Context::new();
+            let e = ctx.entities.add();
+            ctx.transforms.register(e);
+            ctx.softbodies.register(e);
+
+            ctx.softbodies.build_instance()
+                .make_box_limb(Vec3::one())
+                .mass(1.0)
+                .for_entity(e);
+
+            (ctx, e)
+        }
+
+        fn init_instance(
+            &mut self,
+            e: entity::Handle,
+            f: fn(Vec3) -> (Vec3, Vec3),
+        ) {
+            let instance = self.softbodies.get_mut_instance(e);
+            instance.particles.iter_mut().for_each(
+                |p| {
+                    let (to, vel) = f(p.position);
+                    p.init(to, vel);
+                }
+            );
+        }
+
+        #[cfg(debug_assertions)]
+        fn log_instances(&self) {
+            for (i, opt) in self.softbodies.instances.iter().enumerate() {
+                let instance = match opt {
+                    Some(ref instance) => instance,
+                    None => continue,
+                };
+
+                println!("instance={}", i);
+                instance.debug.log_frame();
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        fn check_coherence(&self) {
+            self.softbodies.instances.iter().filter_map(|i| i.as_ref())
+                .for_each(
+                    |i|
+                    assert!(i.debug.orient_coherence > 1.0 - COHERENCE_FUZZ)
+                );
+        }
+
+        fn cycle(&mut self) {
+            self.softbodies.simulate(&mut self.empty, &mut self.transforms);
+            #[cfg(debug_assertions)] self.log_instances();
+        }
+
+        fn spin(&mut self, duration: f32) {
+            let count = (duration / FIXED_DT) as u32;
+            for _ in 0..count { self.cycle(); }
+        }
+
+        fn burndown(&mut self, duration: f32) {
+            let count = (duration / FIXED_DT) as u32 - 1;
+
+            println!("tick={}", 0);
+            self.cycle();
+            let initial = self.softbodies.energy();
+            let mut last = initial;
+            println!("\tenergy={:.4}J", initial);
+
+            // We can assume coherence will be bad here,
+            // so we avoid checking it after the first cycle.
+
+            for i in 0..count {
+                let tick = i + 1;
+
+                println!("tick={}", tick);
+                self.cycle();
+                let ke = self.softbodies.energy();
+                println!("\tenergy={:.4}J", ke);
+
+                if last < MIN_KE {
+                    if ke > MIN_KE {
+                        eprintln!(" initial value: {:.2}J", initial);
+                        eprintln!("previous value: {}J < {}J", last, MIN_KE);
+
+                        eprintln!(
+                            " trigger value: {}J @ tick {} > {}J",
+                            ke,
+                            tick,
+                            MIN_KE
+                        );
+
+                        assert!(ke < MIN_KE);
+                    }
+                } else if ke > last {
+                    eprintln!(" initial value: {:.2}J", initial);
+                    eprintln!("previous value: {}J > {}J", last, MIN_KE);
+
+                    eprintln!(
+                        " trigger value: {:.2}J @ tick {} > prev.",
+                        ke,
+                        tick,
+                    );
+
+                    assert!(ke < last);
+                }
+
+                last = ke;
+                #[cfg(debug_assertions)] self.check_coherence();
+            }
+
+            if last > MIN_KE {
+                eprintln!("initial value: {:.2}J", initial);
+
+                eprintln!(
+                    "  final value: {}J ({}s) > {}J",
+                    last,
+                    duration,
+                    MIN_KE
+                );
+
+                assert!(last < MIN_KE);
+            }
+        }
+    }
+
+    fn rands() -> f32 {
+        let rand::Closed01(result) = rand::random::<rand::Closed01<f32>>();
+        result * 2f32 - 1f32
+    }
+}
