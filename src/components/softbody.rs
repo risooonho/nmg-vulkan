@@ -2820,6 +2820,43 @@ mod tests {
     }
 
     #[test]
+    fn shape_scale() {
+        for i in 1..8 {
+            let (mut ctx, e) = Context::single();
+            let scale = i as f32 * 0.5;
+            {
+                let inst = ctx.softbodies.get_mut_instance(e);
+                inst.rigidity = 1.0;
+                inst.particles.iter_mut()
+                    .for_each(|p| p.init(p.position * scale, Vec3::zero()));
+                let orient = inst.matched_orientation(inst.center());
+                assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
+            }
+
+            println!("scale={}", scale);
+            ctx.softbodies.iterations = 1;
+            ctx.softbodies.set_gravity(Vec3::zero());
+            ctx.softbodies.set_drag(0.75); // Reduce rubber banding
+            ctx.burndown(1.0);
+            {
+                let inst = ctx.softbodies.get_mut_instance(e);
+                let orient = inst.matched_orientation(inst.center());
+                assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
+                inst.particles.iter()
+                    .for_each(
+                        |p| {
+                            assert_approx_eq!(
+                                p.position.mag_squared(),
+                                0.75, // Distance from unit cube to center
+                                1.0
+                            );
+                        }
+                    );
+            }
+        }
+    }
+
+    #[test]
     fn shape_inv() {
         let (mut ctx, e) = Context::single();
         ctx.init_instance(
