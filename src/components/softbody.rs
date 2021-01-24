@@ -2566,8 +2566,7 @@ mod tests {
     use alg::*;
 
     use ::FIXED_DT;
-    const MIN_KE: f32 = std::f32::EPSILON * 2.0;
-    const COHERENCE_FUZZ: f32 = 0.2; // Somewhere around four rot/s
+    const KE_MARGIN: f32 = std::f32::EPSILON * 2.0;
 
     struct Empty { }
     impl softbody::Iterate for Empty { }
@@ -2656,7 +2655,7 @@ mod tests {
             self.cycle();
             let initial = self.softbodies.energy();
             let mut last = initial;
-            println!("\tenergy={:.4}J", initial);
+            println!("\tinitial energy={:.4}J (1 tick warmup)", initial);
 
             // We can assume coherence will be bad here,
             // so we avoid checking it after the first cycle.
@@ -2669,23 +2668,23 @@ mod tests {
                 let ke = self.softbodies.energy();
                 println!("\tenergy={:.4}J", ke);
 
-                if last < MIN_KE {
-                    if ke > MIN_KE {
+                if last < KE_MARGIN {
+                    if ke > KE_MARGIN {
                         eprintln!(" initial value: {:.2}J", initial);
-                        eprintln!("previous value: {}J < {}J", last, MIN_KE);
+                        eprintln!("previous value: {}J < {}J", last, KE_MARGIN);
 
                         eprintln!(
                             " trigger value: {}J @ tick {} > {}J",
                             ke,
                             tick,
-                            MIN_KE
+                            KE_MARGIN
                         );
 
-                        assert!(ke < MIN_KE);
+                        assert!(ke < KE_MARGIN);
                     }
                 } else if ke > last {
                     eprintln!(" initial value: {:.2}J", initial);
-                    eprintln!("previous value: {}J > {}J", last, MIN_KE);
+                    eprintln!("previous value: {}J > {}J", last, KE_MARGIN);
 
                     eprintln!(
                         " trigger value: {:.2}J @ tick {} > prev.",
@@ -2700,17 +2699,17 @@ mod tests {
                 #[cfg(debug_assertions)] self.check_coherence();
             }
 
-            if last > MIN_KE {
+            if last > KE_MARGIN {
                 eprintln!("initial value: {:.2}J", initial);
 
                 eprintln!(
                     "  final value: {}J ({}s) > {}J",
                     last,
                     duration,
-                    MIN_KE
+                    KE_MARGIN
                 );
 
-                assert!(last < MIN_KE);
+                assert!(last < KE_MARGIN);
             }
         }
     }
@@ -2728,7 +2727,9 @@ mod tests {
         ctx.softbodies.set_gravity(Vec3::zero());
         ctx.softbodies.set_drag(0.0);
         ctx.cycle();
-        assert_approx_eq!(ctx.softbodies.energy(), 0.5, 2.0);
+
+        // Note: error is timestep-dependent
+        assert_approx_eq!(ctx.softbodies.energy(), 0.5, 5.0);
     }
 
     #[test]
@@ -2802,7 +2803,9 @@ mod tests {
         ctx.softbodies.set_drag(0.0);
         ctx.spin(1.0);
         let pos = ctx.transforms.get_position(e);
-        assert_approx_eq_vec3!(pos, Vec3::up(), 2.0);
+
+        // Note: error is timestep-dependent
+        assert_approx_eq_vec3_open!(pos, Vec3::up(), 10.0 * 8192.0);
     }
 
     #[test]
