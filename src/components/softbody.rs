@@ -839,6 +839,8 @@ impl Instance {
     /// Returns acceleration of instance in meters per second squared.
     pub fn approx_acceleration(&self) -> alg::Vec3 { self.frame_accel }
 
+    /* TODO: remove. this grows in error as the value gets larger
+             (consider the trivial 2d case)
     /// Returns axis and angular velocity of instance in radians per second. \
     /// `center` and `velocity` are parameters for optional caching.
     pub fn ang_velocity(
@@ -865,6 +867,23 @@ impl Instance {
             let inv = alg::inverse_sqrt(mag);
             (omega * inv, 1.0 / inv)
         }
+    }
+    */
+
+    pub fn approx_ang_vel(&self) -> (alg::Vec3, f32) {
+        debug_assert!(self.match_shape);
+
+        let q = self.frame_orientation_diff;
+        let a = q.abs_angle();
+        debug_assert!(a <= std::f32::consts::PI);
+
+        let vec = q.vec();
+        let mag = vec.mag();
+        let n = if mag < std::f32::EPSILON
+            { alg::Vec3::up() } else { vec / mag };
+
+        // Return separately for increased accuracy
+        (n, a / FIXED_DT)
     }
 
     /// Returns instance orientation using least squares fit. \
