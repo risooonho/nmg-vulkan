@@ -2705,7 +2705,7 @@ mod tests {
         ctx.cycle();
 
         // Note: error is timestep-dependent
-        assert_approx_eq!(ctx.softbodies.energy(), 0.5, 5.0);
+        assert_approx_eq!(ctx.softbodies.energy(), 0.5, 16.0);
     }
 
     #[test]
