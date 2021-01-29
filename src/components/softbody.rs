@@ -453,7 +453,6 @@ struct InstanceIterationDebug {
 #[cfg(debug_assertions)]
 struct InstanceFrameDebug {
     pos_delta: f32,
-    orient_coherence: f32,
     internal_vel: f32,
     err: Vec<InstanceIterationDebug>,
     age: usize,
@@ -464,7 +463,6 @@ impl InstanceFrameDebug {
     fn new() -> InstanceFrameDebug {
         InstanceFrameDebug {
             pos_delta: 0.0,
-            orient_coherence: 0.0,
             internal_vel: 0.0,
             err: Vec::with_capacity(16),
             age: 0,
@@ -474,10 +472,8 @@ impl InstanceFrameDebug {
     fn log_frame(&self) {
         println!(
             "         pos-delta : {:.2} m\n  \
-               orient-coherence : {:.3}\n      \
                    internal-vel : {:.2} m/s",
             self.pos_delta,
-            self.orient_coherence,
             self.internal_vel,
         );
 
@@ -1829,13 +1825,6 @@ impl Manager {
             let orientation = instance.matched_orientation(center).to_quat();
 
             #[cfg(debug_assertions)] {
-                let diff = (
-                      orientation.conjugate()
-                    * instance.frame_orientation_conjugate.conjugate()
-                ).norm();
-                instance.debug.orient_coherence = diff.w.abs();
-                assert!(instance.debug.orient_coherence >= 0.0);
-
                 instance.debug.pos_delta = if instance.debug.age > 0 {
                     (center - instance.frame_position).mag()
                 } else { 0.0 };
@@ -2629,15 +2618,6 @@ mod tests {
             }
         }
 
-        #[cfg(debug_assertions)]
-        fn check_coherence(&self) {
-            self.softbodies.instances.iter().filter_map(|i| i.as_ref())
-                .for_each(
-                    |i|
-                    assert!(i.debug.orient_coherence > 1.0 - COHERENCE_FUZZ)
-                );
-        }
-
         fn cycle(&mut self) {
             self.softbodies.simulate(&mut self.empty, &mut self.transforms);
             #[cfg(debug_assertions)] self.log_instances();
@@ -2656,9 +2636,6 @@ mod tests {
             let initial = self.softbodies.energy();
             let mut last = initial;
             println!("\tinitial energy={:.4}J (1 tick warmup)", initial);
-
-            // We can assume coherence will be bad here,
-            // so we avoid checking it after the first cycle.
 
             for i in 0..count {
                 let tick = i + 1;
@@ -2696,7 +2673,6 @@ mod tests {
                 }
 
                 last = ke;
-                #[cfg(debug_assertions)] self.check_coherence();
             }
 
             if last > KE_MARGIN {
@@ -2730,57 +2706,6 @@ mod tests {
 
         // Note: error is timestep-dependent
         assert_approx_eq!(ctx.softbodies.energy(), 0.5, 5.0);
-    }
-
-    #[test]
-    #[cfg(debug_assertions)]
-    fn coherence() {
-        let (mut ctx, e) = Context::single();
-        ctx.init_instance(e, |pos| (pos, Vec3::zero()));
-        ctx.softbodies.iterations = 1;
-        ctx.softbodies.set_gravity(Vec3::zero());
-        ctx.softbodies.set_drag(0.0);
-
-        {
-            let inst = ctx.softbodies.get_instance(e);
-            assert_eq!(inst.debug.orient_coherence, 0.0);
-        } ctx.cycle(); {
-            let inst = ctx.softbodies.get_instance(e);
-            assert_approx_eq!(inst.debug.orient_coherence, 1.0, 1.0);
-        }
-
-        use std::f32::consts::PI;
-        let mut diff_test = |mul: f32, eq: f32| {
-            let (center, prev) = {
-                let inst = ctx.softbodies.get_mut_instance(e);
-                let center = inst.center();
-                let prev = inst.matched_orientation(center);
-
-                let rot = Quat::axis_angle(Vec3::up(), PI * mul);
-                inst.rotate_around(rot, center);
-                (center, prev)
-            };
-
-            ctx.cycle();
-            let inst = ctx.softbodies.get_instance(e);
-            assert_approx_eq_vec3!(center, inst.center(), 1.0);
-            let curr = inst.matched_orientation(center);
-            let diff = prev.transpose() * curr;
-
-            println!(
-                "prev = {:.2}\ncurr = {:.2}\ndiff = {:.2}",
-                prev,
-                curr,
-                diff,
-            );
-
-            assert_approx_eq!(inst.debug.orient_coherence, eq, 1.0);
-        };
-
-        diff_test( 1.0, 0.0);
-        diff_test( 2.0, 1.0);
-        diff_test(-3.0, 0.0);
-        diff_test(-4.0, 1.0);
     }
 
     #[test]
