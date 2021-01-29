@@ -2736,7 +2736,7 @@ mod tests {
         let pos = ctx.transforms.get_position(e);
 
         // Note: error is timestep-dependent
-        assert_approx_eq_vec3_open!(pos, Vec3::up(), 10.0 * 8192.0);
+        assert_approx_eq_vec3!(pos, Vec3::up(), 10.0 * 8192.0);
     }
 
     #[test]
