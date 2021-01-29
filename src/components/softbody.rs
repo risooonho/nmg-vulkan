@@ -2782,41 +2782,6 @@ mod tests {
     }
 
     #[test]
-    fn shape_inv() {
-        let (mut ctx, e) = Context::single();
-        ctx.init_instance(
-            e, |mut pos| { pos.y *= -1.0; (pos, Vec3::zero()) }
-        );
-
-        {
-            let inst = ctx.softbodies.get_mut_instance(e);
-            inst.rigidity = 1.0;
-            let orient = inst.matched_orientation(inst.center());
-            assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
-        }
-
-        ctx.softbodies.iterations = 1;
-        ctx.softbodies.set_gravity(Vec3::zero());
-        ctx.softbodies.set_drag(0.0);
-        ctx.burndown(2.0);
-
-        let inst = ctx.softbodies.get_instance(e);
-        let orient = inst.matched_orientation(inst.center());
-        assert_approx_eq_quat!(orient.to_quat(), Quat::id(), 1.0);
-        inst.particles.iter()
-            .for_each(
-                |p| {
-                    assert_approx_eq!(
-                        p.position.mag_squared(),
-                        0.75, // Distance from unit cube to center
-                        1.0
-                    );
-                }
-            );
-        }
-    }
-
-    #[test]
     fn shape_rand() {
         for i in 0..128 {
             let (mut ctx, e) = Context::single();
