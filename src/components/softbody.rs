@@ -503,7 +503,8 @@ pub struct Instance {
     /* Updated per-frame */
 
     frame_position: alg::Vec3,
-    frame_orientation_conjugate: alg::Quat,
+    frame_orient_conj: alg::Quat,
+    frame_orient_diff: alg::Quat,
     frame_vel: alg::Vec3,
     frame_accel: alg::Vec3,
 
@@ -603,7 +604,8 @@ impl Instance {
             accel_dt: initial_accel * FIXED_DT * FIXED_DT,
 
             frame_position: alg::Vec3::zero(),
-            frame_orientation_conjugate: alg::Quat::id(),
+            frame_orient_conj: alg::Quat::id(),
+            frame_orient_diff: alg::Quat::id(),
             frame_vel: alg::Vec3::zero(),
             frame_accel: alg::Vec3::zero(),
 
@@ -744,7 +746,8 @@ impl Instance {
             accel_dt: initial_accel * FIXED_DT * FIXED_DT,
 
             frame_position: alg::Vec3::zero(),
-            frame_orientation_conjugate: alg::Quat::id(),
+            frame_orient_conj: alg::Quat::id(),
+            frame_orient_diff: alg::Quat::id(),
             frame_vel: alg::Vec3::zero(),
             frame_accel: alg::Vec3::zero(),
 
@@ -843,7 +846,7 @@ impl Instance {
         // grows in error with the magnitude of the angular velocity
         // (consider the 2D case), so we use the frame diff instead.
 
-        let q = self.frame_orientation_diff;
+        let q = self.frame_orient_diff;
         let a = q.abs_angle();
         debug_assert!(a <= std::f32::consts::PI);
 
@@ -1461,7 +1464,7 @@ impl Manager {
             {
                 // Get offset from center; compare current transform against
                 // model reference
-                let offset = instance.frame_orientation_conjugate * (
+                let offset = instance.frame_orient_conj * (
                     instance.particles[j].position - instance.frame_position
                 ) - instance.model.positions_override.as_ref()
                     .unwrap_or(&instance.model.positions)[j];
@@ -1512,7 +1515,7 @@ impl Manager {
             // Compute offsets
             for i in 0..new.len() {
                 offsets[i] = render::PaddedVec3::new(
-                    instance.frame_orientation_conjugate * new[i]
+                    instance.frame_orient_conj * new[i]
                         - instance.model.normals[i]
                 );
             }
@@ -1832,7 +1835,10 @@ impl Manager {
 
             // Update instance position and orientation
             instance.frame_position = center;
-            instance.frame_orientation_conjugate = orientation.conjugate();
+            instance.frame_orient_diff = (
+                instance.frame_orient_conj * orientation
+            ).norm();
+            instance.frame_orient_conj = orientation.conjugate();
 
             // Update transform
             debug_validate_entity!(transforms, self.handles[i].unwrap());
