@@ -834,44 +834,18 @@ impl Instance {
     }
 
     /// Returns velocity of instance in meters per second.
-    pub fn approx_velocity(&self) -> alg::Vec3 { self.frame_vel }
+    pub fn velocity(&self) -> alg::Vec3 { self.frame_vel }
 
     /// Returns acceleration of instance in meters per second squared.
-    pub fn approx_acceleration(&self) -> alg::Vec3 { self.frame_accel }
+    pub fn acceleration(&self) -> alg::Vec3 { self.frame_accel }
 
-    /* TODO: remove. this grows in error as the value gets larger
-             (consider the trivial 2d case)
-    /// Returns axis and angular velocity of instance in radians per second. \
-    /// `center` and `velocity` are parameters for optional caching.
-    pub fn ang_velocity(
-        &self,
-        center: alg::Vec3,
-        velocity: alg::Vec3,
-    ) -> (alg::Vec3, f32) {
-        let omega = self.particles.iter().fold(
-            alg::Vec3::zero(),
-            |sum, particle| {
-                let r = particle.position - center; // m
-                let v = particle.displacement / FIXED_DT - velocity; // m/s
-                let r_mag = r.mag();
-
-                sum + r.cross(v)      // m^2/s
-                    / (r_mag * r_mag) // rad/s
-            },
-        ) / self.particles.len() as f32; // Average values
-
-        let mag = omega.mag_squared();
-        if std::f32::EPSILON >= mag {
-            (alg::Vec3::up(), 0.0) // Always return normalized vector
-        } else {
-            let inv = alg::inverse_sqrt(mag);
-            (omega * inv, 1.0 / inv)
-        }
-    }
-    */
-
-    pub fn approx_ang_vel(&self) -> (alg::Vec3, f32) {
+    /// Returns axis and angular velocity of instance in radians per second.
+    pub fn ang_vel(&self) -> (alg::Vec3, f32) {
         debug_assert!(self.match_shape);
+
+        // Computing via the torque equation
+        // grows in error with the magnitude of the angular velocity
+        // (consider the 2D case), so we use the frame diff instead.
 
         let q = self.frame_orientation_diff;
         let a = q.abs_angle();
@@ -1439,7 +1413,7 @@ impl Manager {
     pub fn velocity(&self, entities: &[entity::Handle]) -> alg::Vec3 {
         let sum = entities.iter()
             .map(|handle| get_instance!(self, *handle))
-            .map(|instance| (instance.approx_velocity(), instance.mass))
+            .map(|instance| (instance.velocity(), instance.mass))
             .fold(
                 (alg::Vec3::zero(), 0f32),
                 |sum, (v, mass)| (sum.0 + v * mass, sum.1 + mass)
